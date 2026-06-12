@@ -116,8 +116,9 @@ def make_cfg(path, args, proj_root) -> FlowCfg:
     """
     initial_values = {
         "proj_root": proj_root,
-        'workarea': os.environ.get("WORKAREA", "."),
         "self_dir": pathlib.Path(path).parent,
+        'workarea': os.environ.get("WORKAREA", "."),
+        'rg': ''
     }
     if args.tool is not None:
         initial_values["tool"] = args.tool
