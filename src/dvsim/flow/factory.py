@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pathlib
+import os
 import sys
 
 from dvsim.flow.base import FlowCfg
@@ -115,6 +116,7 @@ def make_cfg(path, args, proj_root) -> FlowCfg:
     """
     initial_values = {
         "proj_root": proj_root,
+        'workarea': os.environ.get("WORKAREA", "."),
         "self_dir": pathlib.Path(path).parent,
     }
     if args.tool is not None:
