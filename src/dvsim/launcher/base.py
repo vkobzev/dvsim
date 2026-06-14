@@ -367,7 +367,7 @@ class Launcher(ABC):
                     return JobStatus.FAILED, ErrorMessage(
                         line_number=cnt + 1,
                         message=line.strip(),
-                        context=lines[cnt:end],
+                        context=lines[cnt-2:end],
                     )
 
                 if chk_passed:
