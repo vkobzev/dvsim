@@ -9,10 +9,9 @@ DVSim. Templates can be referenced relative to this directory.
 """
 
 from collections.abc import Mapping
-from importlib import resources
 from pathlib import Path
 
-from jinja2 import Environment, PackageLoader, select_autoescape
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 __all__ = ("render_template",)
 
@@ -29,12 +28,13 @@ def render_static(path: str) -> str:
         string containing the static file content
 
     """
-    full_path = Path("dvsim/templates/static") / path
-
-    return resources.read_text(
-        ".".join(full_path.parts[:-1]),  # Module path
-        full_path.name,
-    )
+    # Resolve relative to this module's location (dvsim/templates/render.py),
+    # so that static files are found regardless of CWD. This also works when
+    # compiled with Nuitka, where importlib.resources may not resolve data
+    # packages correctly in onefile mode.
+    static_dir = Path(__file__).parent / "static"
+    full_path = static_dir / path
+    return full_path.read_text(encoding="utf-8")
 
 
 def render_template(path: str, data: Mapping[str, object] | None = None) -> str:
@@ -51,8 +51,12 @@ def render_template(path: str, data: Mapping[str, object] | None = None) -> str:
     global _env
 
     if _env is None:
+        # Use FileSystemLoader resolved relative to this module instead of
+        # PackageLoader("dvsim"), because the latter relies on importlib.resources
+        # which does not work reliably under Nuitka onefile compilation.
+        templates_dir = Path(__file__).parent
         _env = Environment(
-            loader=PackageLoader("dvsim"),
+            loader=FileSystemLoader(str(templates_dir)),
             autoescape=select_autoescape(),
         )
 
