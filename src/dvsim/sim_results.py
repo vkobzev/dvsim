@@ -152,7 +152,7 @@ class BucketedFailures(BaseModel):
                     JobFailureOverview(
                         name=job_status.name,
                         qual_name=job_status.qual_name,
-                        seed=job_status.seed,
+                        seed=str(int(job_status.seed) & 0xFFFFFFFF),
                         line=first_line_num,
                         log_path=job_status.log_path,
                         log_context=job_status.fail_msg.context or [],
