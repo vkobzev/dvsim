@@ -733,7 +733,7 @@ class RunTest(Deploy):
         # 'test' is used as a substitution variable in the HJson.
         self.test = self.name
         self.build_mode = self.test_obj.build_mode.name
-        self.qual_name = self.run_dir_name + "." + str(self.seed)
+        self.qual_name = self.run_dir_name + "." +str(int(self.seed) & 0xFFFFFFFF)
         self.full_name = f"{self.sim_cfg.name}{self._variant_suffix}:{self.qual_name}"
         self.job_name += f"_{self.build_mode}"
         if self._typed_sim_cfg.cov:
