@@ -103,10 +103,10 @@ check_dependency() {
 
 check_dependency "python3"
 
-# Проверяем, установлен ли Nuitka
-if ! python3 -c "import nuitka" 2>/dev/null; then
-    echo "✗ Nuitka не установлен. Установка..."
-    pip install nuitka
+# Проверяем, установлен ли Nuitka с поддержкой onefile (нужен zstandard для сжатия)
+if ! python3 -c "import nuitka, zstandard" 2>/dev/null; then
+    echo "✗ Nuitka или zstandard не установлены. Установка..."
+    pip install "nuitka[onefile]"
 fi
 
 # --- Сборка ------------------------------------------------------------------
