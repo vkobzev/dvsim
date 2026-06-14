@@ -171,3 +171,6 @@ result/
 
 # DVSim scratch dir contains working files that shouldn't be committed
 scratch/
+
+# .DS_Store (Desktop Services Store) is a hidden system file created by the macOS operating system.
+.DS_Store

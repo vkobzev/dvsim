@@ -123,6 +123,9 @@ def make_cfg(path, args, proj_root) -> FlowCfg:
     if args.tool is not None:
         initial_values["tool"] = args.tool
 
+    if args.gui:
+        initial_values['rg'] = 'rg'
+
     try:
         cls, hjson_data = _load_cfg(path, initial_values)
     except RuntimeError as err:
