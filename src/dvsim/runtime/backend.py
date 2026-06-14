@@ -328,7 +328,7 @@ class LogResults:
             if fail_regex and fail_regex.search(line):
                 end = lineno + NUM_LOG_FAIL_CONTEXT_LINES
                 return JobStatus.FAILED, JobStatusInfo(
-                    message=line.strip(), lines=[lineno], context=lines[lineno:end]
+                    message=line.strip(), lines=[lineno], context=lines[lineno-2:end]
                 )
 
             # The job must match ALL pass patterns to succeed.
