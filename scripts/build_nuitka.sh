@@ -39,17 +39,17 @@ NUITKA_FLAGS=(
     # Отключить флаг deployment (избегает предупреждений при запуске)
     "--no-deployment-flag=self-execution"
 
-    # # Следовать за импортами (по умолчанию включено, но фиксируем явно)
-    # "--follow-imports"
+    # Следовать за импортами (по умолчанию включено, но фиксируем явно)
+    "--follow-imports"
 
-    # # Включить весь пакет dvsim целиком
-    # "--include-package=dvsim"
+    # Включить весь пакет dvsim целиком
+    "--include-package=dvsim"
 
-    # # Plotly использует динамический импорт (_plotly_utils/importers.py через
-    # # importlib.import_module), который Nuitka не может отследить статически.
-    # # Без этого падает с ModuleNotFoundError: No module named 'plotly.graph_objs._bar'
-    # "--include-package=plotly"
-    # "--include-package-data=plotly"
+    # Plotly использует динамический импорт (_plotly_utils/importers.py через
+    # importlib.import_module), который Nuitka не может отследить статически.
+    # Без этого падает с ModuleNotFoundError: No module named 'plotly.graph_objs._bar'
+    "--include-package=plotly"
+    "--include-package-data=plotly"
 
     # Matplotlib тоже использует динамические импорты внутренне
     "--include-package=matplotlib"
