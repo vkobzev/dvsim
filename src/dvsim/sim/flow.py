@@ -7,6 +7,7 @@
 import fnmatch
 import random
 import sys
+import os
 from collections import OrderedDict, defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
@@ -225,6 +226,7 @@ class SimCfg(FlowCfg):
                 )
                 sys.exit(1)
 
+
             # Print scratch_path at the start:
             log.info("[scratch_path]: [%s] [%s]", self.name, self.scratch_path)
 
@@ -428,6 +430,9 @@ class SimCfg(FlowCfg):
             # Override reseed if available.
             if self.reseed_ovrd is not None:
                 test.reseed = self.reseed_ovrd
+            
+            if (os.environ.get("KEY_REINVOKE_GUI", '') == 'rg') and self.args.gui:
+                test.run_opts += test.build_mode.build_opts
 
             # Apply reseed multiplier if set on the command line. This is
             # always positive but might not be an integer. Round to nearest,

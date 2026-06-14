@@ -118,13 +118,10 @@ def make_cfg(path, args, proj_root) -> FlowCfg:
         "proj_root": proj_root,
         "self_dir": pathlib.Path(path).parent,
         'workarea': os.environ.get("WORKAREA", "."),
-        'rg': ''
+        'rg': os.environ.get("KEY_REINVOKE_GUI", ''),
     }
     if args.tool is not None:
         initial_values["tool"] = args.tool
-
-    if args.gui:
-        initial_values['rg'] = 'rg'
 
     try:
         cls, hjson_data = _load_cfg(path, initial_values)
