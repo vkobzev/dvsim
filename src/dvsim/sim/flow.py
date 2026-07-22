@@ -612,6 +612,11 @@ class SimCfg(FlowCfg):
         repo_root = Path(self.proj_root)
         reports_dir = Path(self.scratch_base_path) / "reports"
         url = git_https_url_with_commit(path=repo_root)
+        if url is None:
+            log.debug(
+                "no 'origin' remote in %s — report will not include an upstream source link",
+                repo_root,
+            )
         build_seed = self.build_seed if not self.run_only else None
 
         try:
@@ -662,6 +667,7 @@ class SimCfg(FlowCfg):
                 variant=self.variant,
                 commit=self.commit,
                 commit_short=self.commit_short,
+                dirty=self.dirty,
                 branch=self.branch,
                 url=url,
                 revision_info=self.revision,
@@ -710,6 +716,7 @@ class SimCfg(FlowCfg):
             variant=(self.variant or "").lower() or None,
             commit=self.commit,
             commit_short=self.commit_short,
+            dirty=self.dirty,
             branch=self.branch or "",
             url=url,
             revision_info=self.revision,
