@@ -148,11 +148,13 @@ class BucketedFailures(BaseModel):
                     lines = job_status.fail_msg.lines[0]
                     first_line_num = lines if isinstance(lines, int) else lines[0]
 
+                seed = None if job_status.seed is None else int(job_status.seed) & 0xFFFFFFFF
+
                 buckets[bucket].append(
                     JobFailureOverview(
                         name=job_status.name,
                         qual_name=job_status.qual_name,
-                        seed=str(int(job_status.seed) & 0xFFFFFFFF),
+                        seed=seed,
                         line=first_line_num,
                         log_path=job_status.log_path,
                         log_context=job_status.fail_msg.context or [],
