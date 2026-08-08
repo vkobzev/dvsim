@@ -16,13 +16,13 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SRC_DIR="${PROJECT_ROOT}/src"
 
 # Точка входа (entry point)
-ENTRY_POINT="${SRC_DIR}/dvsim/cli/run.py"
+ENTRY_POINT="${SRC_DIR}/dvsim/cli/admin.py"
 
 # Директория для результатов сборки
 BIN_DIR="${PROJECT_ROOT}/bin"
 
 # Имя выходного бинарника
-OUTPUT_NAME="dvsim"
+OUTPUT_NAME="dvsim-admin"
 
 # --- Базовые опции Nuitka ---------------------------------------------------
 
