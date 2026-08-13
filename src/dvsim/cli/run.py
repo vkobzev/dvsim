@@ -846,6 +846,13 @@ def parse_args(argv: list[str] | None = None):
         help="Print status every N seconds (default %(default)d). A zero value means that every"
         " job status change will cause a print.",
     )
+    dvg.add_argument(
+        "--no-enlighten",
+        action="store_true",
+        default=False,
+        help="Disable the enlighten progress bar and use the plain text status printer"
+        " instead. Equivalent to setting DVSIM_NO_ENLIGHTEN=1.",
+    )
 
     dvg.add_argument(
         "--verbose",
@@ -974,6 +981,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # Register the common deploy settings.
     StatusPrinter.print_interval = args.print_interval
+    StatusPrinter.use_enlighten = not args.no_enlighten
     SlurmLauncher.max_parallel = args.max_parallel
     LsfLauncher.max_parallel = args.max_parallel
     NcLauncher.max_parallel = args.max_parallel

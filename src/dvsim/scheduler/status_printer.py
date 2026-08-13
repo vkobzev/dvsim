@@ -36,6 +36,10 @@ class StatusPrinter(ABC):
     # How often we print by default. Zero means we should print on every event change.
     print_interval = 0
 
+    # Whether the enlighten-based status printer may be used. Cleared by the
+    # --no-enlighten CLI flag (or hard-overridden by the DVSIM_NO_ENLIGHTEN env var).
+    use_enlighten = True
+
     def __init__(self, jobs: Sequence[JobSpec], print_interval: int | None = None) -> None:
         """Construct the base StatusPrinter."""
         # Mapping from target -> (Mapping from status -> count)
@@ -376,17 +380,33 @@ class StatusPrinterSingleton:
         return cls._instance
 
 
+def _enlighten_disabled() -> bool:
+    """Whether the enlighten-based status printer should be disabled.
+
+    The DVSIM_NO_ENLIGHTEN environment variable is a hard override (set it to
+    1/true/yes/on to disable) that works regardless of how dvsim is invoked.
+    Otherwise the choice follows ``StatusPrinter.use_enlighten``, which the
+    ``--no-enlighten`` CLI flag clears.
+    """
+    if os.environ.get("DVSIM_NO_ENLIGHTEN", "").lower() in ("1", "true", "yes", "on"):
+        return True
+    return not StatusPrinter.use_enlighten
+
+
 def create_status_printer(jobs: Sequence[JobSpec]) -> StatusPrinter:
     """Create the global status printer.
 
-    If stdout is a TTY, then return an instance of EnlightenStatusPrinter, else
-    return an instance of StatusPrinter.
+    If stdout is a TTY and enlighten is not disabled, then return an instance of
+    EnlightenStatusPrinter, else return an instance of TtyStatusPrinter.
     """
     status_printer = StatusPrinterSingleton.get()
     if status_printer is not None:
         return status_printer
 
-    status_printer = EnlightenStatusPrinter(jobs) if sys.stdout.isatty() else TtyStatusPrinter(jobs)
+    if not _enlighten_disabled() and sys.stdout.isatty():
+        status_printer = EnlightenStatusPrinter(jobs)
+    else:
+        status_printer = TtyStatusPrinter(jobs)
     StatusPrinterSingleton.set(status_printer)
     return status_printer
 
