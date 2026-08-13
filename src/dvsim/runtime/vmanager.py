@@ -59,6 +59,48 @@ def _sanitize_test_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]", "_", name).strip("_") or "test"
 
 
+# Matches an inline seed assignment, capturing the prefix, e.g. ``+SVSEED=``.
+_SEED_ASSIGN_RE = re.compile(r"^([+-]s?v?seed=)", re.IGNORECASE)
+# Matches a seed flag that takes the value as the next token, e.g. ``-svseed``.
+_SEED_FLAG_RE = re.compile(r"^[+-](sv_seed|svseed)$", re.IGNORECASE)
+
+# vManager substitutes this with the per-run SV seed when ``sv_seed : random``.
+VM_SV_SEED = "$BRUN_SV_SEED"
+
+
+def _rewrite_seed_args(opts: Iterable[str]) -> tuple[list[str], bool]:
+    """Rewrite hardcoded simulator seed values to vManager's ``$BRUN_SV_SEED``.
+
+    ``+SVSEED=<n>`` becomes ``+SVSEED=$BRUN_SV_SEED`` and ``-svseed <n>`` becomes
+    ``-svseed $BRUN_SV_SEED`` so that vManager's randomized seed (``sv_seed :
+    random``) actually reaches the simulator instead of being pinned by dvsim.
+
+    Returns ``(rewritten_opts, found)`` where ``found`` indicates whether a seed
+    argument was present.
+    """
+    tokens = [str(o).strip() for o in opts if str(o).strip()]
+    out: list[str] = []
+    found = False
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        assign = _SEED_ASSIGN_RE.match(tok)
+        if assign:
+            out.append(f"{assign.group(1)}{VM_SV_SEED}")
+            found = True
+            i += 1
+            continue
+        if _SEED_FLAG_RE.match(tok) and i + 1 < len(tokens):
+            out.append(tok)
+            out.append(VM_SV_SEED)
+            found = True
+            i += 2
+            continue
+        out.append(tok)
+        i += 1
+    return out, found
+
+
 class VmanagerRuntimeBackend(RuntimeBackend):
     """Backend that generates vManager ``.vsif`` session files."""
 
@@ -127,27 +169,32 @@ class VmanagerRuntimeBackend(RuntimeBackend):
         """Capture a RunTest job as a vsif test entry."""
         md: dict[str, Any] = dict(job.metadata)
         run_cmd = str(md.get("run_cmd", "") or "").strip()
-        run_opts = md.get("run_opts", []) or []
-        opts_str = " ".join(str(o).strip() for o in run_opts if str(o).strip())
-        run_dir = str(md.get("run_dir", "") or "").strip()
         build_cmd = str(md.get("build_cmd", "") or "").strip()
+        build_opts = list(md.get("build_opts", []) or [])
+        run_dir = str(md.get("run_dir", "") or "").strip()
 
-        run_command = self._build_run_command(job, run_cmd, opts_str, build_cmd)
+        # Point any hardcoded seed at vManager's randomized seed ($BRUN_SV_SEED,
+        # set via `sv_seed : random` on the group) so vManager drives the seed.
+        run_opts, seed_found = _rewrite_seed_args(md.get("run_opts", []) or [])
+        run_command = self._build_run_script(run_cmd, run_opts, job, seed_found=seed_found)
 
+        block = job.block.name
         entry: dict[str, Any] = {
-            "test_name": _sanitize_test_name(job.qual_name),
+            # Base test name (e.g. "chip_destroy_ext_sens1"). Reseed iterations of
+            # the same test share this name and are collapsed into a single vsif
+            # `test` block with a `count` attribute (see _write_vsif_files).
+            "test_name": _sanitize_test_name(job.name),
             "qual_name": job.qual_name,
             "base_name": job.name,
             "full_name": job.full_name,
             "seed": md.get("svseed", job.seed),
-            "seed_explicit": job.seed is not None,
             "tool": job.tool.name,
-            "run_command": run_command,
+            "run_script": run_command,
             "make_cmd": job.cmd,
             "run_cmd": run_cmd,
-            "run_opts": list(run_opts),
+            "run_opts": run_opts,
             "build_cmd": build_cmd,
-            "build_opts": list(md.get("build_opts", []) or []),
+            "build_opts": build_opts,
             "uvm_test": str(md.get("uvm_test", "") or ""),
             "uvm_test_seq": str(md.get("uvm_test_seq", "") or ""),
             "build_mode": str(md.get("build_mode", "") or ""),
@@ -160,24 +207,29 @@ class VmanagerRuntimeBackend(RuntimeBackend):
             "post_run_cmds": list(md.get("post_run_cmds", []) or []),
             "sw_images": list(md.get("sw_images", []) or []),
         }
-        block = job.block.name
         self._entries.setdefault(block, []).append(entry)
         self._block_ws.setdefault(block, job.workspace_cfg)
 
-    def _build_run_command(
-        self, job: JobSpec, run_cmd: str, opts_str: str, build_cmd: str
+    def _build_run_script(
+        self,
+        run_cmd: str,
+        run_opts: list[str],
+        job: JobSpec,
+        *,
+        seed_found: bool,
     ) -> str:
-        """Compute the vsif ``run_command`` for a test, based on the build mode.
+        """Compute the per-test ``run_script`` (run only).
 
-        - ``flist``: dvsim only generated the file list, so vManager must both
-          compile (``build_cmd``) and run (``run_cmd`` + run_opts).
-        - ``local``/``skip``: the snapshot is assumed to exist (built by dvsim or
-          provided externally), so vManager only runs it (``run_cmd`` + run_opts).
+        The compile step is emitted separately (at the group level, via
+        ``pre_group_script`` in flist mode) so the snapshot is built once per
+        group rather than recompiled for every test. The seed is wired to
+        vManager's ``$BRUN_SV_SEED`` (set by ``sv_seed : random``); if the
+        simulator command did not carry an explicit seed option, one is appended.
         """
-        run_part = f"{run_cmd} {opts_str}".strip() if run_cmd else job.cmd
-        if self.build_mode == "flist" and build_cmd:
-            run_part = f"{build_cmd} && {run_part}"
-        return run_part
+        parts = [run_cmd, *run_opts] if run_cmd else [job.cmd]
+        if not seed_found:
+            parts.extend(["-svseed", VM_SV_SEED])
+        return " ".join(p for p in parts if p)
 
     async def submit_many(self, jobs: Iterable[JobSpec]) -> dict[Hashable, JobHandle]:
         """Submit jobs: capture runs, delegate builds locally, skip the rest."""
@@ -293,6 +345,14 @@ class VmanagerRuntimeBackend(RuntimeBackend):
             for e in entries:
                 groups.setdefault(e["build_mode"] or "default", []).append(e)
 
+            # Within each build_mode, collapse reseed iterations of the same test
+            # into a single vsif `test` block carrying a `count` attribute (the
+            # number of runs); vManager runs it that many times, each with a fresh
+            # random seed thanks to `sv_seed : random`.
+            collapsed_groups = {
+                mode: _collapse_reseed(mode_entries) for mode, mode_entries in groups.items()
+            }
+
             context = {
                 "block": block,
                 "session_name": f"{block}_dvsim_{ws.timestamp}",
@@ -301,10 +361,17 @@ class VmanagerRuntimeBackend(RuntimeBackend):
                     {
                         "name": f"{block}_{mode}",
                         "build_mode": mode,
-                        "timeout_secs": _max_timeout_secs(entries_mode),
-                        "tests": entries_mode,
+                        # In flist mode dvsim did not compile, so vManager builds
+                        # the snapshot once per group (pre_group_script) using the
+                        # file lists / build options. local/skip assume a snapshot
+                        # already exists, so no group compile step is emitted.
+                        "compile_script": (
+                            _compile_script(tests_mode) if self.build_mode == "flist" else ""
+                        ),
+                        "timeout_secs": _max_timeout_secs(tests_mode),
+                        "tests": tests_mode,
                     }
-                    for mode, entries_mode in groups.items()
+                    for mode, tests_mode in collapsed_groups.items()
                 ],
             }
             content = self._render(context)
@@ -331,3 +398,38 @@ def _max_timeout_secs(tests: list[dict[str, Any]]) -> int:
         if t.get("timeout_mins") is not None
     ]
     return max(secs) if secs else 3600
+
+
+def _compile_script(tests: list[dict[str, Any]]) -> str:
+    """Build the group-level compile command (``pre_group_script``) for flist mode.
+
+    Combines the (shared) ``build_cmd`` with the build options, which carry the
+    file-list paths. Taken from the first test in the group since all tests in a
+    group share the same build_mode.
+    """
+    if not tests:
+        return ""
+    first = tests[0]
+    parts = [str(first.get("build_cmd", "") or "").strip(), *(first.get("build_opts", []) or [])]
+    return " ".join(p.strip() for p in parts if p.strip())
+
+
+def _collapse_reseed(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse reseed iterations of the same test into one vsif test block.
+
+    dvsim expands ``reseed: N`` into N jobs that differ only by seed. Since the
+    seed is delegated to vManager (``sv_seed : random`` → ``$BRUN_SV_SEED``),
+    those iterations are identical and are merged into a single entry whose
+    ``count`` is the number of runs. Entries are returned in first-seen order.
+    """
+    by_name: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for entry in entries:
+        name = entry["test_name"]
+        if name not in by_name:
+            merged = dict(entry)
+            merged["count"] = 0
+            by_name[name] = merged
+            order.append(name)
+        by_name[name]["count"] += 1
+    return [by_name[name] for name in order]

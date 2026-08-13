@@ -8,7 +8,7 @@ import contextlib
 from pathlib import Path
 
 import pytest
-from hamcrest import assert_that, contains_string, equal_to, instance_of
+from hamcrest import assert_that, contains_string, equal_to, instance_of, not_
 from pytest_mock import MockerFixture
 
 from dvsim.job.data import JobSpec
@@ -47,14 +47,21 @@ def test_jobspec_metadata_defaults_to_empty(tmp_path: Path) -> None:
     assert_that(dict(job.metadata), equal_to({}))
 
 
-def _run_test_spec(tmp_path: Path, **metadata: object) -> JobSpec:
+def _run_test_spec(
+    tmp_path: Path,
+    *,
+    name: str = "my_test",
+    qual_name: str = "0.my_test",
+    seed: int = 1701,
+    **metadata: object,
+) -> JobSpec:
     """Build a RunTest JobSpec carrying vmanager-relevant metadata."""
     md: dict[str, object] = {
         "run_cmd": "xrun -R -snapshot default.xms",
-        "run_opts": ["+UVM_TESTNAME=my_test", "+en_scb=1"],
+        "run_opts": ["+UVM_TESTNAME=my_test", "+en_scb=1", "+SVSEED=1701"],
         "uvm_test": "my_test",
         "uvm_test_seq": "my_vseq",
-        "svseed": 1701,
+        "svseed": seed,
         "build_mode": "default",
         "build_dir": "/scratch/build",
         "build_cmd": "xrun -elaborate -f src.f -snapshot default.xms",
@@ -67,9 +74,9 @@ def _run_test_spec(tmp_path: Path, **metadata: object) -> JobSpec:
         tmp_path,
         job_type="RunTest",
         target="run",
-        name="my_test",
-        qual_name="0.my_test",
-        seed=1701,
+        name=name,
+        qual_name=qual_name,
+        seed=seed,
         metadata=md,
     )
 
@@ -101,13 +108,19 @@ async def test_runtest_emitted_and_vsif_written(tmp_path: Path) -> None:
     assert_that(text, contains_string("session "))
     assert_that(text, contains_string("group "))
     assert_that(text, contains_string("test "))
-    assert_that(text, contains_string("run_command :"))
+    assert_that(text, contains_string("run_script :"))
 
     # The resolved simulator invocation and metadata are carried through.
     assert_that(text, contains_string("xrun -R -snapshot default.xms"))
     assert_that(text, contains_string("+UVM_TESTNAME=my_test"))
     assert_that(text, contains_string("+en_scb=1"))
-    assert_that(text, contains_string("seed : 1701"))
+
+    # vManager randomizes the seed (sv_seed : random) and the seed value is
+    # wired to the simulator via $BRUN_SV_SEED (here the +SVSEED plusarg used by
+    # the testbench), so dvsim's hardcoded seed no longer pins it.
+    assert_that(text, contains_string("sv_seed : random;"))
+    assert_that(text, contains_string("$BRUN_SV_SEED"))
+    assert_that(text, contains_string("+SVSEED=$BRUN_SV_SEED"))
 
 
 @pytest.mark.asyncio
@@ -194,8 +207,8 @@ async def test_flist_neutralises_compile_step(
 
 
 @pytest.mark.asyncio
-async def test_flist_run_command_compiles_and_runs(tmp_path: Path) -> None:
-    """build_mode=flist emits a run_command that compiles (build_cmd) then runs."""
+async def test_flist_compiles_once_then_runs(tmp_path: Path) -> None:
+    """build_mode=flist compiles once via pre_group_script; tests only run."""
     backend = VmanagerRuntimeBackend(build_mode="flist")
     events: list[JobCompletionEvent] = []
 
@@ -210,10 +223,14 @@ async def test_flist_run_command_compiles_and_runs(tmp_path: Path) -> None:
 
     vsif = tmp_path / "scratch" / "test" / "vmanager" / f"{job.block.name}.vsif"
     text = vsif.read_text(encoding="utf-8")
-    # flist mode: vManager must compile (build_cmd) and then run (run_cmd + opts).
+    # The snapshot is compiled once at the group level (pre_group_script) using
+    # the file lists / build options, and each test only runs it.
+    assert_that(text, contains_string("pre_group_script :"))
     assert_that(text, contains_string("xrun -elaborate -f src.f"))
+    assert_that(text, contains_string("sv_seed : random;"))
+    # The per-test run_script only runs (no inline compile) and uses vManager seed.
     assert_that(text, contains_string("xrun -R -snapshot default.xms"))
-    assert_that(text, contains_string(" && "))
+    assert_that(text, contains_string("$BRUN_SV_SEED"))
 
 
 @pytest.mark.asyncio
@@ -232,3 +249,38 @@ async def test_coverage_jobs_skipped(tmp_path: Path) -> None:
 
     assert_that(len(events), equal_to(1))
     assert_that(events[0].status, equal_to(JobStatus.PASSED))
+
+
+@pytest.mark.asyncio
+async def test_reseed_iterations_collapse_into_count(tmp_path: Path) -> None:
+    """Reseed iterations of a test collapse into one vsif block with `count`."""
+    backend = VmanagerRuntimeBackend(build_mode="skip")
+    events: list[JobCompletionEvent] = []
+
+    async def on_complete(batch: list[JobCompletionEvent]) -> None:
+        events.extend(batch)
+
+    backend.attach_completion_callback(on_complete)
+
+    # Three reseed iterations of the same test (only the seed differs; vManager
+    # randomizes it anyway via sv_seed : random).
+    for i, seed in enumerate((111, 222, 333)):
+        await backend.submit(
+            _run_test_spec(
+                tmp_path,
+                name="chip_destroy_ext_sens1",
+                qual_name=f"{i}.chip_destroy_ext_sens1.{seed}",
+                seed=seed,
+            )
+        )
+    await backend.close()
+
+    vsif = tmp_path / "scratch" / "test" / "vmanager" / "test_ip.vsif"
+    text = vsif.read_text(encoding="utf-8")
+    # A single test block with the base name and count : 3; no index/seed in the
+    # name and no per-iteration suffixes.
+    assert_that(text, contains_string("test chip_destroy_ext_sens1 {"))
+    assert_that(text, contains_string("count : 3;"))
+    assert_that(text, not_(contains_string("chip_destroy_ext_sens1_")))
+    assert_that(text, not_(contains_string("_111 {")))
+    assert_that(text, not_(contains_string("_222 {")))

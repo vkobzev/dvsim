@@ -3,9 +3,9 @@
 // to customise for your site/vManager version.
 //
 // These tests were NOT executed by dvsim. Load this file into vManager to run
-// them there. `run_command` carries the resolved simulator invocation
-// (run_cmd + run_opts); `make_cmd` (shown as a comment) is the full dvsim make
-// wrapper, which also handles pre/post run commands and software builds.
+// them there. In flist mode the snapshot is compiled once per group via
+// pre_group_script; each test only runs it. The seed is randomized by vManager
+// (sv_seed : random) and passed to the simulator as $BRUN_SV_SEED.
 
 session {{ session_name }} {
     top_dir : {{ top_dir }};
@@ -14,28 +14,26 @@ session {{ session_name }} {
 
 {% for g in groups %}
 group {{ g.name }} {
-    // build_mode: {{ g.build_mode }}
+{% if g.compile_script %}
+    // Compile the snapshot once for this group (file lists from dvsim/fusesoc).
+    pre_group_script : "{{ g.compile_script }}";
+
+{% endif %}
+    sv_seed : random;
     timeout : {{ g.timeout_secs }}; // seconds
 
 {% for t in g.tests %}
     test {{ t.test_name }} {
-{% if t.seed_explicit %}
-        seed : {{ t.seed }};
-{% else %}
-        seed : random;
-{% endif %}
-        run_command : "{{ t.run_command }}";
-{% if t.uvm_test %}
         // uvm_test: {{ t.uvm_test }}  uvm_test_seq: {{ t.uvm_test_seq }}
+{% if t.count and t.count > 1 %}
+        count : {{ t.count }}; // run N times, each with a fresh random seed
 {% endif %}
+        run_script : "{{ t.run_script }}";
 {% if t.build_dir %}
         // build_dir: {{ t.build_dir }}
 {% endif %}
 {% if t.flist_file %}
         // flist_file: {{ t.flist_file }}
-{% endif %}
-{% if t.build_opts %}
-        // build_opts: {{ t.build_opts | join(" ") }}
 {% endif %}
 {% if t.pre_run_cmds %}
         // pre_run_cmds: {{ t.pre_run_cmds | join(" && ") }}
@@ -43,8 +41,8 @@ group {{ g.name }} {
 {% if t.post_run_cmds %}
         // post_run_cmds: {{ t.post_run_cmds | join(" && ") }}
 {% endif %}
-        // Full dvsim make wrapper (alternative run_command):
-        // run_command : "{{ t.make_cmd }}";
+        // Full dvsim make wrapper (alternative run_script):
+        // run_script : "{{ t.make_cmd }}";
     };
 
 {% endfor %}
