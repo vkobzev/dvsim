@@ -9,7 +9,7 @@ import random
 import shlex
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from dvsim.flow.base import FlowCfg
 from dvsim.job.data import JobSpec
@@ -182,7 +182,28 @@ class Deploy:
             post_finish=self.post_finish(),
             pass_patterns=self.pass_patterns,
             fail_patterns=self.fail_patterns,
+            metadata=self._job_metadata(),
         )
+
+    def _job_metadata(self) -> dict[str, Any]:
+        """Return resolved per-job attributes for export-oriented backends.
+
+        Subclasses extend this with target-specific fields. The values are fully
+        substituted at this point (``_subst_vars`` has already run). Used to
+        populate ``JobSpec.metadata`` so that backends such as the vmanager vsif
+        generator can access the raw simulator invocation instead of the wrapped
+        ``cmd``.
+        """
+        return {
+            "target": self.target,
+            "flow": self.flow,
+            "tool": self.sim_cfg.tool,
+            "build_mode": getattr(self, "build_mode", ""),
+            "odir": str(self.odir),
+            "exports": dict(self.merged_exports),
+            "pass_patterns": list(self.pass_patterns),
+            "fail_patterns": list(self.fail_patterns),
+        }
 
     def _define_attrs(self) -> None:
         """Define the attributes this instance needs to have.
@@ -509,6 +530,22 @@ class CompileSim(Deploy):
         if self.sim_cfg.args.build_timeout_mins is not None:
             self.build_timeout_mins = self.sim_cfg.args.build_timeout_mins
 
+    def _job_metadata(self) -> dict[str, Any]:
+        """Return build-specific metadata for export-oriented backends."""
+        md = super()._job_metadata()
+        md.update(
+            {
+                "build_cmd": self.build_cmd,
+                "build_opts": list(self.build_opts),
+                "build_dir": self.build_dir,
+                "pre_build_cmds": list(self.pre_build_cmds),
+                "post_build_cmds": list(self.post_build_cmds),
+                "sv_flist_gen_cmd": self.sv_flist_gen_cmd,
+                "sv_flist_gen_dir": self.sv_flist_gen_dir,
+            }
+        )
+        return md
+
     def pre_launch(self) -> Callable[[], None]:
         """Get pre-launch callback."""
 
@@ -759,6 +796,51 @@ class RunTest(Deploy):
                 self.full_name,
                 self.run_timeout_multiplier,
             )
+
+    def _job_metadata(self) -> dict[str, Any]:
+        """Return run-specific metadata for export-oriented backends.
+
+        These are the fully-substituted attributes that describe how to launch
+        the simulator for this test (e.g. the resolved ``run_cmd`` / ``run_opts``
+        for xcelium/vcs). The vmanager backend uses them to emit a vsif session
+        that carries the raw simulator invocation rather than the make wrapper.
+        """
+        md = super()._job_metadata()
+        # The compiled simulation artifact lives on the build job we depend on.
+        build_dir = ""
+        build_cmd = ""
+        build_opts: list[str] = []
+        if self.dependencies:
+            dep = self.dependencies[0]
+            build_dir = getattr(dep, "build_dir", "")
+            build_cmd = getattr(dep, "build_cmd", "")
+            build_opts = list(getattr(dep, "build_opts", []) or [])
+        md.update(
+            {
+                "run_cmd": self.run_cmd,
+                "run_opts": list(self.run_opts),
+                "uvm_test": self.uvm_test,
+                "uvm_test_seq": self.uvm_test_seq,
+                "seed": self.seed,
+                "svseed": self.svseed,
+                "build_seed": self.build_seed,
+                "sw_images": list(self.sw_images),
+                "sw_build_device": self.sw_build_device,
+                "sw_build_cmd": self.sw_build_cmd,
+                "sw_build_opts": list(self.sw_build_opts),
+                "pre_run_cmds": list(self.pre_run_cmds),
+                "post_run_cmds": list(self.post_run_cmds),
+                "run_dir": self.run_dir,
+                "run_dir_name": self.run_dir_name,
+                "build_dir": build_dir,
+                "build_cmd": build_cmd,
+                "build_opts": build_opts,
+                "flist_file": getattr(self.sim_cfg, "flist_file", ""),
+                "run_timeout_mins": self.run_timeout_mins,
+                "cov_db_dir": getattr(self, "cov_db_dir", ""),
+            }
+        )
+        return md
 
     def pre_launch(self) -> Callable[[], None]:
         """Perform pre-launch tasks."""

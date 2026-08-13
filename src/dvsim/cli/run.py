@@ -42,6 +42,7 @@ from dvsim.launcher.slurm import SlurmLauncher
 from dvsim.logging import LOG_LEVELS, configure_logging, log
 from dvsim.runtime.backend import RuntimeBackend
 from dvsim.runtime.registry import BackendType, backend_registry
+from dvsim.runtime.vmanager import VmanagerRuntimeBackend
 from dvsim.scheduler.resources import UnknownResourcePolicy
 from dvsim.scheduler.status_printer import StatusPrinter, get_status_printer
 from dvsim.utils import TS_FORMAT, TS_FORMAT_LONG, rm_path, run_cmd_with_timeout
@@ -429,6 +430,44 @@ def parse_args(argv: list[str] | None = None):
         "--remote",
         action="store_true",
         help=("Trigger copying of the repo to scratch area."),
+    )
+
+    disg.add_argument(
+        "--vmanager",
+        action="store_true",
+        help=(
+            "Generate Cadence vManager .vsif session files for the RunTest jobs "
+            "instead of running the simulations locally. By default dvsim runs "
+            "only the fusesoc file-list generation (the step vManager cannot do) "
+            "and defers compilation + test runs to vManager. See "
+            "--vmanager-build-mode for the build policy. Also selectable via "
+            "DVSIM_BACKEND=vmanager."
+        ),
+    )
+
+    disg.add_argument(
+        "--vmanager-build-mode",
+        choices=["flist", "local", "skip"],
+        default="flist",
+        help=(
+            "When --vmanager is set: 'flist' (default) runs only the file-list "
+            "generation (fusesoc) locally, without compiling the snapshot - "
+            "vManager then compiles + runs each test from the file list; 'local' "
+            "additionally compiles the snapshot on this machine so vManager only "
+            "runs it; 'skip' runs nothing locally (the build must be provided by "
+            "the vManager host)."
+        ),
+    )
+
+    disg.add_argument(
+        "--vmanager-template",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Path to a custom Jinja2 .vsif template to use with --vmanager. "
+            "Defaults to the packaged template; also settable via the "
+            "DVSIM_VMANAGER_TEMPLATE environment variable."
+        ),
     )
 
     disg.add_argument(
@@ -888,6 +927,19 @@ def parse_args(argv: list[str] | None = None):
         log.error("--interactive and --remote cannot be set together")
         sys.exit()
 
+    # Only one backend selection mode may be chosen.
+    selected_backends = [name for name, flag in (
+        ("--local", args.local),
+        ("--fake", args.fake),
+        ("--vmanager", args.vmanager),
+    ) if flag]
+    if len(selected_backends) > 1:
+        log.error(
+            "%s cannot be set together; pick one backend mode.",
+            " and ".join(selected_backends),
+        )
+        sys.exit()
+
     if args.interactive and args.reseed != 1:
         args.reseed = 1
 
@@ -906,18 +958,20 @@ def parse_args(argv: list[str] | None = None):
     return args
 
 
-def set_backend_type(*, is_local: bool = False, fake: bool = False) -> None:
+def set_backend_type(*, is_local: bool = False, fake: bool = False, vmanager: bool = False) -> None:
     """Set the default backend type that will be used to launch jobs (unless overridden).
 
     The DVSIM_BACKEND/DVSIM_LAUNCHER environment variables are used to identify what
     backend should be used by default, and is intended to be specific to the user's
-    work site and set externally before invoking DVSim. Selecting a local or fake backend
-    via the command line will override this.
+    work site and set externally before invoking DVSim. Selecting a local, fake, or
+    vmanager backend via the command line will override this.
     """
     if is_local:
         backend = "local"
     elif fake:
         backend = "fake"
+    elif vmanager:
+        backend = "vmanager"
     else:
         backend = os.environ.get("DVSIM_BACKEND")
 
@@ -989,7 +1043,12 @@ def main(argv: list[str] | None = None) -> None:
     RuntimeBackend.max_output_dirs = args.max_odirs
 
     # Configure the runtime backend.
-    set_backend_type(is_local=args.local, fake=args.fake)
+    set_backend_type(is_local=args.local, fake=args.fake, vmanager=args.vmanager)
+
+    # Pass vmanager-specific settings to the backend via class-level defaults
+    # (the backend is instantiated lazily later by the scheduler).
+    VmanagerRuntimeBackend.build_mode_default = args.vmanager_build_mode
+    VmanagerRuntimeBackend.vsif_template_default = args.vmanager_template
 
     # Configure scheduler instrumentation
     if args.instrumentation:

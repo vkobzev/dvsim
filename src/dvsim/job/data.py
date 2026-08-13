@@ -11,9 +11,9 @@ capture the results of the job run.
 
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from dvsim.job.status import JobStatus
 from dvsim.report.data import IPMeta, ToolMeta
@@ -130,6 +130,17 @@ class JobSpec(BaseModel):
     """regex patterns to match on to determine if the job is successful."""
     fail_patterns: Sequence[str]
     """regex patterns to match on to determine if the job has failed."""
+
+    metadata: Mapping[str, Any] = Field(default_factory=dict)
+    """Arbitrary per-job metadata, keyed by attribute name.
+
+    Populated by the Deploy object with fully-substituted, target-specific
+    attributes (e.g. the resolved simulator command and options for a RunTest).
+    This is consumed by export-oriented backends such as the vmanager vsif
+    generator, which need the raw simulator invocation rather than the wrapped
+    `cmd`. Backends should treat the keys as optional unless documented for a
+    given job_type.
+    """
 
     @property
     def id(self) -> str:
