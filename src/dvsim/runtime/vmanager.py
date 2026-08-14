@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -36,10 +37,9 @@ from dvsim.logging import log
 from dvsim.runtime.backend import RuntimeBackend
 from dvsim.runtime.data import CompletionCallback, JobCompletionEvent, JobHandle
 from dvsim.runtime.local import LocalRuntimeBackend
-from dvsim.templates.render import render_template
 
 if TYPE_CHECKING:
-    from collections.abc import Hashable, Iterable
+    from collections.abc import Hashable, Iterable, Mapping
 
 __all__ = ("VmanagerRuntimeBackend",)
 
@@ -177,7 +177,10 @@ class VmanagerRuntimeBackend(RuntimeBackend):
         # Point any hardcoded seed at vManager's randomized seed ($ATTR(sv_seed),
         # set via `sv_seed : random` on the group) so vManager drives the seed.
         run_opts, seed_found = _rewrite_seed_args(md.get("run_opts", []) or [])
-        run_command = self._build_run_script(run_cmd, run_opts, job, seed_found=seed_found)
+        exports = md.get("exports", {}) or {}
+        run_command = self._build_run_script(
+            run_cmd, run_opts, job, seed_found=seed_found, exports=exports
+        )
 
         block = job.block.name
         entry: dict[str, Any] = {
@@ -218,6 +221,7 @@ class VmanagerRuntimeBackend(RuntimeBackend):
         job: JobSpec,
         *,
         seed_found: bool,
+        exports: Mapping[str, str],
     ) -> str:
         """Compute the per-test ``run_script`` (run only).
 
@@ -226,11 +230,21 @@ class VmanagerRuntimeBackend(RuntimeBackend):
         group rather than recompiled for every test. The seed is wired to
         vManager's ``$ATTR(sv_seed)`` (set by ``sv_seed : random``); if the
         simulator command did not carry an explicit seed option, one is appended.
+
+        Per-test environment variables (dvsim ``exports``) are injected as an
+        ``export ...;`` prefix so the simulator runs with the same environment
+        dvsim would have set.
         """
         parts = [run_cmd, *run_opts] if run_cmd else [job.cmd]
         if not seed_found:
             parts.extend(["-svseed", VM_SV_SEED])
-        return " ".join(p for p in parts if p)
+        run_part = " ".join(p for p in parts if p)
+        if exports:
+            assignments = " ".join(
+                f"{name}={shlex.quote(str(value))}" for name, value in exports.items()
+            )
+            return f"export {assignments}; {run_part}"
+        return run_part
 
     async def submit_many(self, jobs: Iterable[JobSpec]) -> dict[Hashable, JobHandle]:
         """Submit jobs: capture runs, delegate builds locally, skip the rest."""
@@ -317,14 +331,26 @@ class VmanagerRuntimeBackend(RuntimeBackend):
         self._write_vsif_files()
 
     def _render(self, context: dict[str, Any]) -> str:
+        """Render the vsif, using a custom template if given, else the packaged one.
+
+        ``trim_blocks``/``lstrip_blocks`` keep the generated vsif compact (no
+        blank lines left by the ``{% if %}`` control blocks).
+        """
         tpl = self.vsif_template
         if tpl and Path(tpl).is_file():
-            env = Environment(
-                loader=FileSystemLoader(str(Path(tpl).parent)),
-                autoescape=select_autoescape(),
-            )
-            return env.get_template(Path(tpl).name).render(**context)
-        return render_template(DEFAULT_TEMPLATE, context)
+            loader = FileSystemLoader(str(Path(tpl).parent))
+            name = Path(tpl).name
+        else:
+            # templates live in dvsim/templates (parent of this module's package).
+            loader = FileSystemLoader(str(Path(__file__).parent.parent / "templates"))
+            name = DEFAULT_TEMPLATE
+        env = Environment(
+            loader=loader,
+            autoescape=select_autoescape(),
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )
+        return env.get_template(name).render(**context)
 
     def _write_vsif_files(self) -> None:
         """Write one vsif per block, grouping tests by build_mode."""
