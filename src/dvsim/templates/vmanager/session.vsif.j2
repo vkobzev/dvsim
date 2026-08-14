@@ -5,7 +5,7 @@
 // These tests were NOT executed by dvsim. Load this file into vManager to run
 // them there. In flist mode the snapshot is compiled once per group via
 // pre_group_script; each test only runs it. The seed is randomized by vManager
-// (sv_seed : random) and passed to the simulator as $BRUN_SV_SEED.
+// (sv_seed : random) and passed to the simulator as $ATTR(sv_seed).
 
 session {{ session_name }} {
     top_dir : {{ top_dir }};

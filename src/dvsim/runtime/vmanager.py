@@ -65,14 +65,15 @@ _SEED_ASSIGN_RE = re.compile(r"^([+-]s?v?seed=)", re.IGNORECASE)
 _SEED_FLAG_RE = re.compile(r"^[+-](sv_seed|svseed)$", re.IGNORECASE)
 
 # vManager substitutes this with the per-run SV seed when ``sv_seed : random``.
-VM_SV_SEED = "$BRUN_SV_SEED"
+# Modern vManager uses $ATTR(<name>); the legacy $BRUN_<NAME> form is deprecated.
+VM_SV_SEED = "$ATTR(sv_seed)"
 
 
 def _rewrite_seed_args(opts: Iterable[str]) -> tuple[list[str], bool]:
-    """Rewrite hardcoded simulator seed values to vManager's ``$BRUN_SV_SEED``.
+    """Rewrite hardcoded simulator seed values to vManager's ``$ATTR(sv_seed)``.
 
-    ``+SVSEED=<n>`` becomes ``+SVSEED=$BRUN_SV_SEED`` and ``-svseed <n>`` becomes
-    ``-svseed $BRUN_SV_SEED`` so that vManager's randomized seed (``sv_seed :
+    ``+SVSEED=<n>`` becomes ``+SVSEED=$ATTR(sv_seed)`` and ``-svseed <n>`` becomes
+    ``-svseed $ATTR(sv_seed)`` so that vManager's randomized seed (``sv_seed :
     random``) actually reaches the simulator instead of being pinned by dvsim.
 
     Returns ``(rewritten_opts, found)`` where ``found`` indicates whether a seed
@@ -173,7 +174,7 @@ class VmanagerRuntimeBackend(RuntimeBackend):
         build_opts = list(md.get("build_opts", []) or [])
         run_dir = str(md.get("run_dir", "") or "").strip()
 
-        # Point any hardcoded seed at vManager's randomized seed ($BRUN_SV_SEED,
+        # Point any hardcoded seed at vManager's randomized seed ($ATTR(sv_seed),
         # set via `sv_seed : random` on the group) so vManager drives the seed.
         run_opts, seed_found = _rewrite_seed_args(md.get("run_opts", []) or [])
         run_command = self._build_run_script(run_cmd, run_opts, job, seed_found=seed_found)
@@ -223,7 +224,7 @@ class VmanagerRuntimeBackend(RuntimeBackend):
         The compile step is emitted separately (at the group level, via
         ``pre_group_script`` in flist mode) so the snapshot is built once per
         group rather than recompiled for every test. The seed is wired to
-        vManager's ``$BRUN_SV_SEED`` (set by ``sv_seed : random``); if the
+        vManager's ``$ATTR(sv_seed)`` (set by ``sv_seed : random``); if the
         simulator command did not carry an explicit seed option, one is appended.
         """
         parts = [run_cmd, *run_opts] if run_cmd else [job.cmd]
@@ -418,7 +419,7 @@ def _collapse_reseed(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collapse reseed iterations of the same test into one vsif test block.
 
     dvsim expands ``reseed: N`` into N jobs that differ only by seed. Since the
-    seed is delegated to vManager (``sv_seed : random`` → ``$BRUN_SV_SEED``),
+    seed is delegated to vManager (``sv_seed : random`` → ``$ATTR(sv_seed)``),
     those iterations are identical and are merged into a single entry whose
     ``count`` is the number of runs. Entries are returned in first-seen order.
     """

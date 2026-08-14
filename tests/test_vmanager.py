@@ -116,11 +116,11 @@ async def test_runtest_emitted_and_vsif_written(tmp_path: Path) -> None:
     assert_that(text, contains_string("+en_scb=1"))
 
     # vManager randomizes the seed (sv_seed : random) and the seed value is
-    # wired to the simulator via $BRUN_SV_SEED (here the +SVSEED plusarg used by
+    # wired to the simulator via $ATTR(sv_seed) (here the +SVSEED plusarg used by
     # the testbench), so dvsim's hardcoded seed no longer pins it.
     assert_that(text, contains_string("sv_seed : random;"))
-    assert_that(text, contains_string("$BRUN_SV_SEED"))
-    assert_that(text, contains_string("+SVSEED=$BRUN_SV_SEED"))
+    assert_that(text, contains_string("$ATTR(sv_seed)"))
+    assert_that(text, contains_string("+SVSEED=$ATTR(sv_seed)"))
 
 
 @pytest.mark.asyncio
@@ -228,9 +228,9 @@ async def test_flist_compiles_once_then_runs(tmp_path: Path) -> None:
     assert_that(text, contains_string("pre_group_script :"))
     assert_that(text, contains_string("xrun -elaborate -f src.f"))
     assert_that(text, contains_string("sv_seed : random;"))
-    # The per-test run_script only runs (no inline compile) and uses vManager seed.
+        # The per-test run_script only runs (no inline compile) and uses vManager seed.
     assert_that(text, contains_string("xrun -R -snapshot default.xms"))
-    assert_that(text, contains_string("$BRUN_SV_SEED"))
+    assert_that(text, contains_string("$ATTR(sv_seed)"))
 
 
 @pytest.mark.asyncio
