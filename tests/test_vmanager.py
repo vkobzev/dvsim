@@ -284,3 +284,38 @@ async def test_reseed_iterations_collapse_into_count(tmp_path: Path) -> None:
     assert_that(text, not_(contains_string("chip_destroy_ext_sens1_")))
     assert_that(text, not_(contains_string("_111 {")))
     assert_that(text, not_(contains_string("_222 {")))
+
+
+@pytest.mark.asyncio
+async def test_per_regression_vsif_files(tmp_path: Path) -> None:
+    """One extra vsif is written per regression the captured tests belong to."""
+    backend = VmanagerRuntimeBackend(build_mode="skip")
+
+    async def on_complete(batch: list[JobCompletionEvent]) -> None:
+        del batch
+
+    backend.attach_completion_callback(on_complete)
+
+    await backend.submit(
+        _run_test_spec(
+            tmp_path, name="smoke_test1", qual_name="0.smoke_test1.1", regressions=["smoke"]
+        )
+    )
+    await backend.submit(
+        _run_test_spec(
+            tmp_path, name="nightly_test1", qual_name="0.nightly_test1.2", regressions=["nightly"]
+        )
+    )
+    await backend.close()
+
+    vdir = tmp_path / "scratch" / "test" / "vmanager"
+    # Main file with all tests, plus one per regression with only its tests.
+    assert_that((vdir / "test_ip.vsif").exists(), equal_to(True))
+    smoke_text = (vdir / "test_ip_smoke.vsif").read_text(encoding="utf-8")
+    nightly_text = (vdir / "test_ip_nightly.vsif").read_text(encoding="utf-8")
+    assert_that(smoke_text, contains_string("test smoke_test1 {"))
+    assert_that(smoke_text, not_(contains_string("test nightly_test1 {")))
+    assert_that(nightly_text, contains_string("test nightly_test1 {"))
+    assert_that(nightly_text, not_(contains_string("test smoke_test1 {")))
+    # The regression session name reflects the regression.
+    assert_that(smoke_text, contains_string("session test_ip_smoke_dvsim_"))

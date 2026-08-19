@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from dvsim.job.data import JobSpec, JobStatusInfo
+from dvsim.job.data import JobSpec, JobStatusInfo, WorkspaceConfig
 from dvsim.job.status import JobStatus
 from dvsim.job.time import JobTime
 from dvsim.logging import log
@@ -204,6 +204,7 @@ class VmanagerRuntimeBackend(RuntimeBackend):
             "build_mode": str(md.get("build_mode", "") or ""),
             "build_dir": str(md.get("build_dir", "") or ""),
             "flist_file": str(md.get("flist_file", "") or ""),
+            "regressions": [str(r) for r in md.get("regressions", []) or []],
             "run_dir": run_dir,
             "log_path": str(job.log_path),
             "timeout_mins": job.timeout_mins,
@@ -353,7 +354,11 @@ class VmanagerRuntimeBackend(RuntimeBackend):
         return env.get_template(name).render(**context)
 
     def _write_vsif_files(self) -> None:
-        """Write one vsif per block, grouping tests by build_mode."""
+        """Write vsif files per block.
+
+        Emits one vsif with all captured tests plus one additional vsif per
+        regression group defined in the sim cfg.
+        """
         if not self._entries:
             log.info("[vmanager] No RunTest jobs captured; no vsif file to write.")
             return
@@ -365,47 +370,19 @@ class VmanagerRuntimeBackend(RuntimeBackend):
                 continue
             out_dir = Path(ws.scratch_path) / "vmanager"
             out_dir.mkdir(parents=True, exist_ok=True)
-            vsif_path = out_dir / f"{block}.vsif"
 
-            # Group tests by build_mode so each group can share a build snapshot.
-            groups: dict[str, list[dict[str, Any]]] = {}
-            for e in entries:
-                groups.setdefault(e["build_mode"] or "default", []).append(e)
-
-            # Within each build_mode, collapse reseed iterations of the same test
-            # into a single vsif `test` block carrying a `count` attribute (the
-            # number of runs); vManager runs it that many times, each with a fresh
-            # random seed thanks to `sv_seed : random`.
-            collapsed_groups = {
-                mode: _collapse_reseed(mode_entries) for mode, mode_entries in groups.items()
-            }
-
-            context = {
-                "block": block,
-                "session_name": f"{block}_dvsim_{ws.timestamp}",
-                "top_dir": str(out_dir),
-                "groups": [
-                    {
-                        "name": f"{block}_{mode}",
-                        "build_mode": mode,
-                        # In flist mode dvsim did not compile, so vManager builds
-                        # the snapshot once per group (pre_group_script) using the
-                        # file lists / build options. local/skip assume a snapshot
-                        # already exists, so no group compile step is emitted.
-                        "compile_script": (
-                            _compile_script(tests_mode) if self.build_mode == "flist" else ""
-                        ),
-                        "timeout_secs": _max_timeout_secs(tests_mode),
-                        "tests": tests_mode,
-                    }
-                    for mode, tests_mode in collapsed_groups.items()
-                ],
-            }
-            content = self._render(context)
-            vsif_path.write_text(content, encoding="utf-8")
-            self._written.append(vsif_path)
+            # Main session with every captured test.
+            self._write_one_vsif(out_dir, block, ws, entries)
             total += len(entries)
-            log.info("[vmanager] Wrote %d test(s) to %s", len(entries), vsif_path)
+
+            # One session per regression the captured tests belong to, so a
+            # verifier can load just that regression's test set into vManager.
+            per_regression: dict[str, list[dict[str, Any]]] = {}
+            for e in entries:
+                for regr in e.get("regressions", []):
+                    per_regression.setdefault(regr, []).append(e)
+            for regr_name, regr_entries in per_regression.items():
+                self._write_one_vsif(out_dir, f"{block}_{regr_name}", ws, regr_entries)
 
         log.info(
             "[vmanager] Done. %d test(s) across %d session file(s). "
@@ -415,6 +392,54 @@ class VmanagerRuntimeBackend(RuntimeBackend):
         )
         for p in self._written:
             log.info("[vmanager] session file: %s", p)
+
+    def _write_one_vsif(
+        self,
+        out_dir: Path,
+        stem: str,
+        ws: WorkspaceConfig,
+        entries: list[dict[str, Any]],
+    ) -> None:
+        """Render and write a single vsif file ``<stem>.vsif`` for ``entries``."""
+        # Group tests by build_mode so each group can share a build snapshot.
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for e in entries:
+            groups.setdefault(e["build_mode"] or "default", []).append(e)
+
+        # Within each build_mode, collapse reseed iterations of the same test
+        # into a single vsif `test` block carrying a `count` attribute (the
+        # number of runs); vManager runs it that many times, each with a fresh
+        # random seed thanks to `sv_seed : random`.
+        collapsed_groups = {
+            mode: _collapse_reseed(mode_entries) for mode, mode_entries in groups.items()
+        }
+
+        context = {
+            "block": stem,
+            "session_name": f"{stem}_dvsim_{ws.timestamp}",
+            "top_dir": str(out_dir),
+            "groups": [
+                {
+                    "name": f"{stem}_{mode}",
+                    "build_mode": mode,
+                    # In flist mode dvsim did not compile, so vManager builds
+                    # the snapshot once per group (pre_group_script) using the
+                    # file lists / build options. local/skip assume a snapshot
+                    # already exists, so no group compile step is emitted.
+                    "compile_script": (
+                        _compile_script(tests_mode) if self.build_mode == "flist" else ""
+                    ),
+                    "timeout_secs": _max_timeout_secs(tests_mode),
+                    "tests": tests_mode,
+                }
+                for mode, tests_mode in collapsed_groups.items()
+            ],
+        }
+        content = self._render(context)
+        vsif_path = out_dir / f"{stem}.vsif"
+        vsif_path.write_text(content, encoding="utf-8")
+        self._written.append(vsif_path)
+        log.info("[vmanager] Wrote %d test(s) to %s", len(entries), vsif_path)
 
 
 def _max_timeout_secs(tests: list[dict[str, Any]]) -> int:

@@ -815,8 +815,17 @@ class RunTest(Deploy):
             build_dir = getattr(dep, "build_dir", "")
             build_cmd = getattr(dep, "build_cmd", "")
             build_opts = list(getattr(dep, "build_opts", []) or [])
+        # Names of the regressions (test sets) this test belongs to; a regression
+        # with tests == None covers all tests. Used to emit one vsif per
+        # regression group.
+        regressions = [
+            regr.name
+            for regr in (getattr(self.sim_cfg, "regressions", None) or [])
+            if regr.tests is None or self.test_obj in regr.tests
+        ]
         md.update(
             {
+                "regressions": regressions,
                 "run_cmd": self.run_cmd,
                 "run_opts": list(self.run_opts),
                 "uvm_test": self.uvm_test,
