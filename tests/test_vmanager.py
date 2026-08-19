@@ -8,14 +8,14 @@ import contextlib
 from pathlib import Path
 
 import pytest
-from hamcrest import assert_that, contains_string, equal_to, instance_of, not_
+from hamcrest import assert_that, contains_string, equal_to, instance_of, less_than, not_
 from pytest_mock import MockerFixture
 
 from dvsim.job.data import JobSpec
 from dvsim.job.status import JobStatus
 from dvsim.runtime.data import JobCompletionEvent, JobHandle
 from dvsim.runtime.registry import BackendType, backend_registry, register_backend
-from dvsim.runtime.vmanager import VmanagerRuntimeBackend
+from dvsim.runtime.vmanager import _SCRIPT_WRAP_INDENT, VmanagerRuntimeBackend, _wrap_script
 from tests.test_scheduler import job_spec_factory
 
 
@@ -47,12 +47,26 @@ def test_jobspec_metadata_defaults_to_empty(tmp_path: Path) -> None:
     assert_that(dict(job.metadata), equal_to({}))
 
 
+def test_wrap_script_roundtrip_and_width() -> None:
+    """Wrapped scripts reconstruct to the original command and stay narrow."""
+    inner = " ".join(f"+arg{i}=value{i}" for i in range(30))
+    cmd = f"make -f flow.mk run run_opts='{inner}' seed=$ATTR(sv_seed) uvm_test=t"
+    wrapped = _wrap_script(cmd)
+    # Undo the shell continuations (quote-toggle form first, then the plain one).
+    restored = wrapped.replace("' \\\n" + _SCRIPT_WRAP_INDENT + "'", " ").replace(
+        " \\\n" + _SCRIPT_WRAP_INDENT, " "
+    )
+    assert_that(restored, equal_to(cmd))
+    assert_that(max(len(line) for line in wrapped.splitlines()), less_than(76))
+
+
 def _run_test_spec(
     tmp_path: Path,
     *,
     name: str = "my_test",
     qual_name: str = "0.my_test",
     seed: int = 1701,
+    cmd: str = "echo 'test_cmd'",
     **metadata: object,
 ) -> JobSpec:
     """Build a RunTest JobSpec carrying vmanager-relevant metadata."""
@@ -77,6 +91,7 @@ def _run_test_spec(
         name=name,
         qual_name=qual_name,
         seed=seed,
+        cmd=cmd,
         metadata=md,
     )
 
@@ -108,7 +123,10 @@ async def test_runtest_emitted_and_vsif_written(tmp_path: Path) -> None:
     assert_that(text, contains_string("session "))
     assert_that(text, contains_string("group "))
     assert_that(text, contains_string("test "))
-    assert_that(text, contains_string("run_script :"))
+    # The dvsim make wrapper is the primary run_script; the direct simulator
+    # invocation is kept as a commented alternative.
+    assert_that(text, contains_string('run_script : "echo \'test_cmd\'";'))
+    assert_that(text, contains_string("// direct simulator invocation (alternative):"))
 
     # The resolved simulator invocation and metadata are carried through.
     assert_that(text, contains_string("xrun -R -snapshot default.xms"))
@@ -284,6 +302,39 @@ async def test_reseed_iterations_collapse_into_count(tmp_path: Path) -> None:
     assert_that(text, not_(contains_string("chip_destroy_ext_sens1_")))
     assert_that(text, not_(contains_string("_111 {")))
     assert_that(text, not_(contains_string("_222 {")))
+
+
+@pytest.mark.asyncio
+async def test_make_wrapper_is_primary_with_vmanager_seed(tmp_path: Path) -> None:
+    """The primary run_script is the dvsim make wrapper with the seed rewritten."""
+    backend = VmanagerRuntimeBackend(build_mode="skip")
+
+    async def on_complete(batch: list[JobCompletionEvent]) -> None:
+        del batch
+
+    backend.attach_completion_callback(on_complete)
+
+    job = _run_test_spec(
+        tmp_path,
+        cmd=(
+            "make -f flow.mk run uvm_test=my_test build_seed=None "
+            "run_opts='+UVM_TESTNAME=my_test +SVSEED=99' seed=99"
+        ),
+    )
+    await backend.submit(job)
+    await backend.close()
+
+    vsif = tmp_path / "scratch" / "test" / "vmanager" / "test_ip.vsif"
+    text = vsif.read_text(encoding="utf-8")
+    # Primary run_script is the make wrapper, with both seed spellings - the
+    # +SVSEED plusarg inside run_opts and the bare `seed=` make variable -
+    # rewritten to vManager's randomized seed. build_seed stays untouched.
+    assert_that(text, contains_string('run_script : "make -f flow.mk run'))
+    assert_that(text, contains_string("+SVSEED=$ATTR(sv_seed)"))
+    assert_that(text, contains_string("seed=$ATTR(sv_seed)"))
+    assert_that(text, contains_string("build_seed=None"))
+    assert_that(text, not_(contains_string("+SVSEED=99")))
+    assert_that(text, not_(contains_string("seed=99")))
 
 
 @pytest.mark.asyncio

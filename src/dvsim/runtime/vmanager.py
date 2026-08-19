@@ -68,6 +68,95 @@ _SEED_FLAG_RE = re.compile(r"^[+-](sv_seed|svseed)$", re.IGNORECASE)
 # Modern vManager uses $ATTR(<name>); the legacy $BRUN_<NAME> form is deprecated.
 VM_SV_SEED = "$ATTR(sv_seed)"
 
+# Target line width and continuation indent for wrapped script values.
+_SCRIPT_WRAP_WIDTH = 75
+_SCRIPT_WRAP_INDENT = "            "
+_COMMENT_WRAP_WIDTH = 90
+
+
+def _wrap_script(cmd: str, width: int = _SCRIPT_WRAP_WIDTH) -> str:
+    r"""Wrap a shell command across lines using shell-safe continuations.
+
+    Breaks only at whitespace so the command survives reconstruction by the
+    shell: outside quotes (and inside double quotes) a ``\<newline>`` is a line
+    continuation; inside single quotes the quote is closed before the
+    continuation and reopened after it, so the shell concatenates the pieces
+    back into the original word. Unbreakable runs (e.g. a giant ``PATH=``
+    assignment) stay on their own line.
+    """
+    if len(cmd) <= width:
+        return cmd
+    parts: list[str] = []
+    line_begin = 0
+    last_space = -1
+    last_space_in_single = False
+    in_single = in_double = False
+
+    def break_at_last_space() -> None:
+        nonlocal line_begin, last_space
+        head = cmd[line_begin:last_space]
+        if last_space_in_single:
+            parts.append(head + "' \\\n" + _SCRIPT_WRAP_INDENT + "'")
+        else:
+            parts.append(head + " \\\n" + _SCRIPT_WRAP_INDENT)
+        line_begin = last_space + 1
+        last_space = -1
+
+    for i, ch in enumerate(cmd):
+        if ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        # Account for the continuation indent (all lines but the first) and the
+        # trailing continuation marker when deciding to break.
+        cont_cost = len(_SCRIPT_WRAP_INDENT) if parts else 0
+        if i - line_begin + cont_cost + 3 >= width and last_space > line_begin:
+            break_at_last_space()
+        if ch == " ":
+            last_space = i
+            last_space_in_single = in_single
+    parts.append(cmd[line_begin:])
+    return "".join(parts)
+
+
+def _wrap_comment(text: str, width: int = _COMMENT_WRAP_WIDTH) -> str:
+    """Wrap a long comment; every output line gets its own ``// `` prefix."""
+    prefix = "        // "
+    budget = max(width - len(prefix), 20)
+    words = text.split()
+    if not words:
+        return prefix.rstrip()
+    lines: list[str] = []
+    cur = ""
+    for word in words:
+        cand = word if not cur else f"{cur} {word}"
+        if len(cand) > budget and cur:
+            lines.append(cur)
+            cur = word
+        else:
+            cur = cand
+    lines.append(cur)
+    return "\n".join(prefix + line for line in lines)
+
+
+# Inline seed assignment inside a command *string*, e.g. ``run_opts='+SVSEED=123'``.
+_PLUS_SEED_STR_RE = re.compile(r"(?i)(\+s?v?seed=)\d+")
+# Bare seed assignment (e.g. the dvsim make variable ``seed=<n>``), avoiding
+# ``+SVSEED=`` (handled above) and names like ``build_seed=``.
+_MAKE_SEED_STR_RE = re.compile(r"(?i)(?<![\w+])(s?v?seed=)\d+")
+
+
+def _rewrite_seed_str(cmd: str) -> str:
+    """Rewrite hardcoded seed values in a command string.
+
+    Used for the dvsim make wrapper, where the seed appears twice: as the
+    ``+SVSEED=<n>`` plusarg inside the quoted ``run_opts`` make variable and as
+    the bare ``seed=<n>`` make variable itself. Both are pointed at vManager's
+    randomized seed so ``sv_seed : random`` stays in control.
+    """
+    cmd = _PLUS_SEED_STR_RE.sub(lambda m: f"{m.group(1)}{VM_SV_SEED}", cmd)
+    return _MAKE_SEED_STR_RE.sub(lambda m: f"{m.group(1)}{VM_SV_SEED}", cmd)
+
 
 def _rewrite_seed_args(opts: Iterable[str]) -> tuple[list[str], bool]:
     """Rewrite hardcoded simulator seed values to vManager's ``$ATTR(sv_seed)``.
@@ -194,6 +283,9 @@ class VmanagerRuntimeBackend(RuntimeBackend):
             "seed": md.get("svseed", job.seed),
             "tool": job.tool.name,
             "run_script": run_command,
+            # The full dvsim make wrapper is the primary run_script; its inline
+            # seed is pointed at vManager's randomized seed.
+            "run_script_make": _rewrite_seed_str(job.cmd),
             "make_cmd": job.cmd,
             "run_cmd": run_cmd,
             "run_opts": run_opts,
@@ -351,6 +443,8 @@ class VmanagerRuntimeBackend(RuntimeBackend):
             trim_blocks=True,
             lstrip_blocks=True,
         )
+        env.filters["wrap_script"] = _wrap_script
+        env.filters["wrap_comment"] = _wrap_comment
         return env.get_template(name).render(**context)
 
     def _write_vsif_files(self) -> None:
@@ -381,6 +475,22 @@ class VmanagerRuntimeBackend(RuntimeBackend):
             for e in entries:
                 for regr in e.get("regressions", []):
                     per_regression.setdefault(regr, []).append(e)
+            if per_regression:
+                log.info(
+                    "[vmanager] Regression groups for %s: %s",
+                    block,
+                    ", ".join(sorted(per_regression)),
+                )
+            else:
+                log.warning(
+                    "[vmanager] No regression membership found for tests in %s - "
+                    "only the combined %s.vsif is written. Check that the cfg "
+                    "defines `regressions:` covering these tests (see "
+                    "`--list regressions`) and that the running dvsim build "
+                    "includes the per-regression feature.",
+                    block,
+                    block,
+                )
             for regr_name, regr_entries in per_regression.items():
                 self._write_one_vsif(out_dir, f"{block}_{regr_name}", ws, regr_entries)
 

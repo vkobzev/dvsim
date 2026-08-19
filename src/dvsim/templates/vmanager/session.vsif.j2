@@ -15,7 +15,7 @@ session {{ session_name }} {
 group {{ g.name }} {
 {% if g.compile_script %}
     // Compile the snapshot once for this group (file lists from dvsim/fusesoc).
-    pre_group_script : "{{ g.compile_script }}";
+    pre_group_script : "{{ g.compile_script | wrap_script }}";
 {% endif %}
     sv_seed : random;
     timeout : {{ g.timeout_secs }}; // seconds
@@ -26,14 +26,15 @@ group {{ g.name }} {
 {% if t.count and t.count > 1 %}
         count : {{ t.count }}; // run N times, each with a fresh random seed
 {% endif %}
-        run_script : "{{ t.run_script }}";
+        // Primary: full dvsim make wrapper (seed pointed at $ATTR(sv_seed)).
+        run_script : "{{ t.run_script_make | wrap_script }}";
+{{ ("direct simulator invocation (alternative): " ~ t.run_script) | wrap_comment }}
 {% if t.build_dir %}
         // build_dir: {{ t.build_dir }}
 {% endif %}
 {% if t.flist_file %}
         // flist_file: {{ t.flist_file }}
 {% endif %}
-        // dvsim make wrapper (alternative run_script): {{ t.make_cmd }}
     };
 
 {% endfor %}
