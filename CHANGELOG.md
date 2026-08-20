@@ -2,6 +2,33 @@
 
 <!-- version list -->
 
+## v1.51.0 (2026-08-20)
+
+### Features
+
+- Report EDA tool version from a dedicated version query
+  ([`bcceebc`](https://github.com/lowRISC/dvsim/commit/bcceebced5e859d1ec5a532c1d0ad3a7bf8bc362))
+
+
+## v1.50.3 (2026-08-20)
+
+### Bug Fixes
+
+- Bump the actions group across 1 directory with 3 updates
+  ([`523f3d8`](https://github.com/lowRISC/dvsim/commit/523f3d845f4f18418447ab71d74c6278007c1fba))
+
+
+## v1.50.2 (2026-08-20)
+
+### Bug Fixes
+
+- Add Dependabot config for weekly updates and security advisories
+  ([`f656b3a`](https://github.com/lowRISC/dvsim/commit/f656b3a170c3d5a6e9d9fb4d498177530529586a))
+
+- Exempt Dependabot commits from commit lint
+  ([`85c22dc`](https://github.com/lowRISC/dvsim/commit/85c22dc1516a2819b70fc73032af6b02823310e0))
+
+
 ## v1.50.1 (2026-08-07)
 
 ### Bug Fixes
