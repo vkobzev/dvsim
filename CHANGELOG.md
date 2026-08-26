@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v1.52.0 (2026-08-25)
+
+### Features
+
+- Add a configuration file for dvsim itself
+  ([`9a8427e`](https://github.com/lowRISC/dvsim/commit/9a8427ed28ab79a71db3fa4ef2d5764a164ca833))
+
+- Select the FuseSoC mapping and cores-root from dvsim
+  ([`007842f`](https://github.com/lowRISC/dvsim/commit/007842f16fda00b2e23f17407e947534b9cf712c))
+
+- Set proj_root from the dvsim config file
+  ([`aa45c07`](https://github.com/lowRISC/dvsim/commit/aa45c07ef6136036188aabd15b429d93e6681809))
+
+
 ## v1.51.2 (2026-08-21)
 
 ### Bug Fixes
