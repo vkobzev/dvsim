@@ -55,6 +55,19 @@
               "foo_feature2_type2",
               "foo_feature2_type3"]
     }
+    {
+      name: feature3
+      desc: '''**Goal**: How-to description
+
+            **Stimulus**: Describe the stimulus procedure.
+
+            **Check**: Describe the checking procedure.
+            '''
+      stage: V2
+      // testplan entry with a wildcard pattern: every written test whose name
+      // starts with "foo_feature3_" maps to this entry automatically
+      tests: ["{name}_feature3_*"]
+    }
   ]
 
   covergroups: [

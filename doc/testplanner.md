@@ -208,6 +208,47 @@ This will resolve to the following 6 tests:
  "chip_jtag_csr_hw_reset_x", "chip_jtag_csr_hw_reset_y", "chip_jtag_csr_hw_reset_z"]
 ```
 
+### Automatic mapping of simulation results
+
+Instead of listing every written test explicitly, entries in the `tests` list may
+contain wildcards, so that the simulation results map to the testplan
+automatically. This mirrors the mapping patterns of vManager
+(`MAPPING_PATTERN`): the patterns are stored in
+the plan itself, and each test found in the results is attached to every
+testpoint whose pattern it matches.
+
+```hjson
+  {
+    name: feature2
+    stage: V2
+    desc: '''**Goal**: High level goal of this test.
+          ...
+          '''
+    // Maps all written tests whose name starts with "foo_feature2_".
+    tests: ["foo_feature2_*"]
+  }
+```
+
+The matching semantics are:
+* A `tests` entry is treated as a pattern only if it contains `*` (any sequence
+  of characters) or `?` (exactly one character), following the usual glob rules.
+  Entries without wildcards are matched exactly, as before. Names that merely
+  contain `[` are matched literally.
+* The patterns are evaluated when the simulation results are mapped to the
+  testplan, i.e. after the `{...}` substitution wildcards have been resolved.
+  The two mechanisms combine freely: `tests: ["{name}_*"]` becomes `foo_*` for
+  the DUT named `foo`.
+* A test may match multiple testpoints and a pattern may match any number of
+  tests, including none. Each matched test is counted towards the testplan
+  progress only once.
+* Tests that match no testpoint are reported under the "Unmapped tests"
+  entry, which is useful for spotting tests that the plan does not cover.
+* A pattern that matches no test at all is shown in the report as a "not run"
+  (0/0) entry, like a written test that has not been run yet.
+* Wildcard entries are excluded from the regressions that `dvsim` derives
+  automatically from the testplan stages, since a pattern cannot be resolved to
+  a concrete test at parse time. A warning is logged for each excluded entry.
+
 ### Example sources
 
 The following examples provided within `util/dvsim/examples/testplanner` can be used as a starting point.

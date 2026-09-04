@@ -7,11 +7,50 @@
 import re
 import sys
 from collections.abc import Sequence
+from fnmatch import translate
 from pathlib import Path
 from typing import Any, TextIO
 
 import hjson
 from tabulate import tabulate
+
+from dvsim.logging import log
+
+
+def _is_test_pattern(name: str) -> bool:
+    """Return True if the name should be treated as a glob pattern.
+
+    A name is considered a pattern only if it contains '*' or '?'. This
+    mirrors the mapping patterns of vManager, which match metrics against
+    globs stored in the verification plan. Names containing '[' alone are
+    matched literally to avoid surprises with names like "foo[0]".
+    """
+    return "*" in name or "?" in name
+
+
+def _split_test_patterns(
+    names: Sequence[str],
+) -> tuple[set[str], list[tuple[str, re.Pattern[str]]]]:
+    """Split a list of names into exact names and compiled glob patterns.
+
+    Returns a tuple (exact, patterns) where exact is the set of literal
+    names and patterns is a list of (name, regex) pairs for the entries
+    containing wildcards. The regexes are case-sensitive and match the
+    entire name, independent of the platform.
+    """
+    exact: set[str] = set()
+    patterns: list[tuple[str, re.Pattern[str]]] = []
+    for name in names:
+        if _is_test_pattern(name):
+            patterns.append((name, re.compile(translate(name))))
+        else:
+            exact.add(name)
+    return exact, patterns
+
+
+def _pattern_matches_any(pattern: str, names: Sequence[str]) -> bool:
+    """Return True if the glob pattern matches any of the given names."""
+    return any(re.compile(translate(pattern)).match(name) for name in names)
 
 
 class Result:
@@ -351,6 +390,12 @@ class Testpoint(Element):
         in this testpoint and build a structure. If no match is found, or if
         self.tests is an empty list, indicate 0/1 passing so that it is
         factored into the final total.
+
+        Entries in self.tests that contain wildcards ('*' or '?') are glob
+        patterns matched against the test names, so that results map to the
+        testplan automatically (like vManager's mapping patterns). A test may
+        match multiple testpoints, and a pattern may match any number of
+        tests.
         """
         # If no written tests were indicated for this testpoint, then reuse
         # the testpoint name to count towards "not run".
@@ -363,17 +408,27 @@ class Testpoint(Element):
         if self.not_mapped:
             return
 
+        exact_tests, test_patterns = _split_test_patterns(self.tests)
+        patterns_matched: set[str] = set()
+
         for tr in test_results:
-            if tr.name in self.tests:
+            matched_patterns = [name for name, regex in test_patterns if regex.match(tr.name)]
+            if tr.name in exact_tests or matched_patterns:
                 tr.mapped = True
                 self.test_results.append(tr)
+            patterns_matched.update(matched_patterns)
 
         # Did we map all tests in this testpoint? If we are mapping the full
         # testplan, then count the ones not found as "not run", i.e. 0 / 0.
-        tests_mapped = [tr.name for tr in self.test_results]
+        # A pattern that matched no test at all is reported the same way,
+        # with the pattern itself shown as the test name.
+        tests_mapped = {tr.name for tr in self.test_results}
         for test in self.tests:
-            if test not in tests_mapped:
-                self.test_results.append(Result(name=test))
+            if test in patterns_matched:
+                continue
+            if test in exact_tests and test in tests_mapped:
+                continue
+            self.test_results.append(Result(name=test))
 
 
 class Testplan:
@@ -597,6 +652,8 @@ class Testplan:
         gives the name of the verification stage. The tests field is a list of
         the names of tests associated with testpoints in the stage.
 
+        Wildcard entries in a testpoint's tests are skipped, since they
+        cannot be resolved to concrete tests at parse time.
         """
         stage_to_tests: dict[str, set[str]] = {}
 
@@ -604,7 +661,20 @@ class Testplan:
             if tp.not_mapped or tp.stage not in Testpoint.stages[1:]:
                 continue
 
-            stage_to_tests.setdefault(tp.stage, set()).update(tp.tests)
+            tests = set()
+            for test in tp.tests:
+                if _is_test_pattern(test):
+                    log.warning(
+                        'Test "%s" of testpoint "%s" is a wildcard pattern; '
+                        "it is excluded from the %s stage regression.",
+                        test,
+                        tp.name,
+                        tp.stage,
+                    )
+                    continue
+                tests.add(test)
+
+            stage_to_tests.setdefault(tp.stage, set()).update(tests)
 
         # Build stage_to_tests dict into a Hjson-like data structure
         return [{"name": stage, "tests": sorted(tps)} for stage, tps in stage_to_tests.items()]
@@ -736,16 +806,21 @@ class Testplan:
         testplan by updating the progress dict.
 
         cgs_found is a list of covergroup names extracted from the coverage
-        database after the simulation is run with coverage enabled.
+        database after the simulation is run with coverage enabled. Covergroup
+        names in the testplan may contain wildcards ('*' or '?'), which are
+        matched against the found names.
         """
         if not self.covergroups:
             return
 
+        cgs_found_set = set(cgs_found)
         written = 0
         total = 0
         for cg in self.covergroups:
             total += 1
-            if cg.name in cgs_found:
+            if cg.name in cgs_found_set or (
+                _is_test_pattern(cg.name) and _pattern_matches_any(cg.name, cgs_found)
+            ):
                 written += 1
 
         self.progress["Covergroups"] = {
