@@ -174,3 +174,6 @@ scratch/
 
 # .DS_Store (Desktop Services Store) is a hidden system file created by the macOS operating system.
 .DS_Store
+
+# ZCode working files (session plans and other local artifacts)
+.zcode/
