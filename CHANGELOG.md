@@ -2,6 +2,65 @@
 
 <!-- version list -->
 
+## v1.55.0 (2026-10-05)
+
+### Features
+
+- Let a regression include other regressions
+  ([`817ecbf`](https://github.com/lowRISC/dvsim/commit/817ecbf90ff707be84eaef6e28ef245898b957fe))
+
+
+## v1.54.2 (2026-10-05)
+
+### Bug Fixes
+
+- Bump the actions group across 1 directory with 2 updates
+  ([`90959c3`](https://github.com/lowRISC/dvsim/commit/90959c339afeedbbceead4086f7770927b275143))
+
+
+## v1.54.1 (2026-09-23)
+
+### Bug Fixes
+
+- Report the command output when run_cmd fails
+  ([`be595e2`](https://github.com/lowRISC/dvsim/commit/be595e2590ea61f5e50c1ff468ac7cd27c2952c1))
+
+
+## v1.54.0 (2026-09-22)
+
+### Features
+
+- Add Verilator simulation tool plugin
+  ([`cd7a547`](https://github.com/lowRISC/dvsim/commit/cd7a5474e6236dcb275069b7d86a641a4a953329))
+
+- Register Verilator as a simulation tool
+  ([`5d35d6e`](https://github.com/lowRISC/dvsim/commit/5d35d6e94e0d66b82951225779698f5ddb7da548))
+
+
+## v1.53.0 (2026-09-11)
+
+### Features
+
+- Expose a build's options to the run step as {build_opts_file}
+  ([`367a7e8`](https://github.com/lowRISC/dvsim/commit/367a7e853fce2a3b9fce350a684eb092f3bab3ee))
+
+
+## v1.52.2 (2026-09-09)
+
+### Bug Fixes
+
+- Use increase versioning-strategy for uv dependabot updates
+  ([`5ac7974`](https://github.com/lowRISC/dvsim/commit/5ac7974661f85638275b9b4dd3cc57e9d61d691b))
+
+
+## v1.52.1 (2026-09-03)
+
+### Bug Fixes
+
+- Strip credentials from the recorded git origin url
+  ([`e30301a`](https://github.com/lowRISC/dvsim/commit/e30301ae755a485394d9962dd60dd87a8dc5cd2a))
+
+
 ## v1.52.0 (2026-08-25)
 
 ### Features
