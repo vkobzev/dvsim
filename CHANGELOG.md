@@ -2,6 +2,30 @@
 
 <!-- version list -->
 
+## v1.56.1 (2026-10-09)
+
+### Bug Fixes
+
+- Bump python-semantic-release/publish-action
+  ([`180f79a`](https://github.com/lowRISC/dvsim/commit/180f79a17987b4c99e165f7b29de309740041240))
+
+
+## v1.56.0 (2026-10-09)
+
+### Features
+
+- Logging the number of jobs with each status, broken down by resource
+  ([`8193435`](https://github.com/lowRISC/dvsim/commit/8193435e1774a8837092721379c6eabc81e27315))
+
+
+## v1.55.1 (2026-10-07)
+
+### Bug Fixes
+
+- Bump urllib3 from 2.7.0 to 2.8.0
+  ([`90b51fe`](https://github.com/lowRISC/dvsim/commit/90b51fe0609b279ef9b53a89d693f7222365f245))
+
+
 ## v1.55.0 (2026-10-05)
 
 ### Features
