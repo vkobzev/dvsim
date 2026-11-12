@@ -2,6 +2,78 @@
 
 <!-- version list -->
 
+## v1.59.4 (2026-11-12)
+
+### Bug Fixes
+
+- Bump astral-sh/setup-uv
+  ([`c17f175`](https://github.com/lowRISC/dvsim/commit/c17f175f950ac554ea19e037a1daab36410a4012))
+
+
+## v1.59.3 (2026-11-12)
+
+### Bug Fixes
+
+- Upgrade ruff to 0.17
+  ([`3bbfb68`](https://github.com/lowRISC/dvsim/commit/3bbfb6831a04bb0598c457ca248edcd41fa656f1))
+
+
+## v1.59.2 (2026-11-12)
+
+### Bug Fixes
+
+- Bump GitPython and Pillow past their advisories
+  ([`dd73c8d`](https://github.com/lowRISC/dvsim/commit/dd73c8d2215ff24c06f2e70b880e69a5ebb26054))
+
+
+## v1.59.1 (2026-11-10)
+
+### Bug Fixes
+
+- Cap the default max_parallel at 16, and log it correctly
+  ([`42bc1c9`](https://github.com/lowRISC/dvsim/commit/42bc1c9c0245782a9c560c92b002555da81017c3))
+
+### Testing
+
+- Keep the tests' git commands in their own repositories
+  ([`3b7db33`](https://github.com/lowRISC/dvsim/commit/3b7db33beede6055cba9bc25923db5749da92c24))
+
+- Share the dvsim_log fixture
+  ([`a5b1f70`](https://github.com/lowRISC/dvsim/commit/a5b1f7028bfe038b1d07e7454a46a85fd80c7321))
+
+
+## v1.59.0 (2026-11-10)
+
+### Features
+
+- Let build modes, run modes and tests ask for resources
+  ([`e4a6b71`](https://github.com/lowRISC/dvsim/commit/e4a6b7129e4db1b0afe5e6f7318c3d57fed883fe))
+
+
+## v1.58.0 (2026-11-10)
+
+### Features
+
+- Add {file_dir}, the directory of the hjson file being parsed
+  ([`322d6a0`](https://github.com/lowRISC/dvsim/commit/322d6a050162c32a554e52a710b96d177515ecb0))
+
+
+## v1.57.1 (2026-10-28)
+
+### Bug Fixes
+
+- Report the formal coverage columns the engine actually measured
+  ([`5778f8c`](https://github.com/lowRISC/dvsim/commit/5778f8c6df52da3ffea1377843d15808fc97b0b6))
+
+
+## v1.57.0 (2026-10-26)
+
+### Features
+
+- Adds CDC results parsing for Meridian in the CDC flow
+  ([`178075c`](https://github.com/lowRISC/dvsim/commit/178075c419189381cbd62576d3c7589a4c12c4d8))
+
+
 ## v1.56.1 (2026-10-09)
 
 ### Bug Fixes

@@ -28,7 +28,7 @@ from dvsim.job.deploy import (
 )
 from dvsim.job.status import JobStatus
 from dvsim.logging import log
-from dvsim.modes import BuildMode, Mode, RunMode, find_mode
+from dvsim.modes import BuildMode, Mode, RunMode, find_mode, merge_resources
 from dvsim.regression import Regression
 from dvsim.sim.data import (
     IPMeta,
@@ -293,6 +293,11 @@ class SimCfg(FlowCfg):
         self.build_modes = BuildMode.create_modes(self.build_modes)
         self.run_modes = RunMode.create_modes(self.run_modes)
 
+        # Resources that the globally enabled modes ask for: those for the builds, and those for
+        # the tests.
+        self.global_build_resources = {}
+        self.global_run_resources = {}
+
         # Walk through build modes enabled on the CLI and append the opts
         for en_build_mode in self.en_build_modes:
             build_mode_obj = find_mode(en_build_mode, self.build_modes)
@@ -306,6 +311,12 @@ class SimCfg(FlowCfg):
                 self.run_opts.extend(build_mode_obj.run_opts)
                 self.sw_images.extend(build_mode_obj.sw_images)
                 self.sw_build_opts.extend(build_mode_obj.sw_build_opts)
+                self.global_build_resources = merge_resources(
+                    self.global_build_resources, build_mode_obj.build_resources
+                )
+                self.global_run_resources = merge_resources(
+                    self.global_run_resources, build_mode_obj.run_resources
+                )
             else:
                 log.error(
                     'Mode "%s" enabled on the command line is not defined',
@@ -322,6 +333,9 @@ class SimCfg(FlowCfg):
                 self.run_opts.extend(run_mode_obj.run_opts)
                 self.sw_images.extend(run_mode_obj.sw_images)
                 self.sw_build_opts.extend(run_mode_obj.sw_build_opts)
+                self.global_run_resources = merge_resources(
+                    self.global_run_resources, run_mode_obj.run_resources
+                )
             else:
                 log.error('Mode "%s" enabled on the command line is not defined', en_run_mode)
                 sys.exit(1)
@@ -431,6 +445,8 @@ class SimCfg(FlowCfg):
             self.run_opts,
             self.sw_images,
             self.sw_build_opts,
+            self.global_build_resources,
+            self.global_run_resources,
         )
 
         # Process reseed override and create the build_list

@@ -145,6 +145,9 @@ Thus, all Make variables must be defined in the DUT configuration file and diffe
 The **DUT configuration** is expressed in Hjson, split into a tree of files.
 The root DUT configuration file indicates the [flow](./glossary.md#eda-tool-flow) and the EDA tool used to execute the flow, among several other things.
 It may recursively import auxiliary Hjson files containing additional EDA tool flow configuration data, such as test specifications that are common to multiple DUTs.
+Within any of these files, `{file_dir}` names the directory that holds that file (as an absolute path), so a file can name the files next to it wherever it is imported from.
+`{self_dir}`, by contrast, is the directory of the configuration file that dvsim loaded, at the top of the import tree.
+`{file_dir}` is replaced as each file is loaded, so it can only be used in Hjson files, not in options given on the command line.
 
 ### Parser stage
 
@@ -193,6 +196,10 @@ Keeping the scheduler and the launcher semantically separate enables us to suppo
 
 The flow manager object indicates to the scheduler how many jobs can run in parallel, how often to poll, and how many jobs to poll in a single round.
 These settings are also tunable via the command-line.
+Each job also needs some resources, such as tool licences, and `--resource NAME=COUNT` caps how many of a resource the running jobs may hold at once.
+A job needs one of its tool by default.
+Build modes, run modes and tests can ask for more, as they add options: a build mode's `build_resources: {NAME: COUNT}` apply to its build, and the `run_resources` of a build mode, run mode or test apply to the tests that use it (e.g. a VIP licence that only the simulation checks out).
+Where two of these name the same resource, the job needs the larger count.
 The scheduler starts executing jobs starting at the root of the dependency tree (typically, builds) of deployable objects it was provided with.
 At each dependency level, **it dispatches jobs in the same order** as determined by the flow manager object.
 If the dispatch slots are full, the remaining jobs are put on hold (queued).
